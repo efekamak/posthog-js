@@ -253,9 +253,10 @@ async function captureCustomEvent(lowLevelServer: MCPServerLike, eventData: Capt
 
   const scope = currentRequestScope(trackingData)
   const unattributed = !scope && !canScopeRequests
+  const session = scope?.pending?.settled ?? scope
   const event: McpEvent = {
-    sessionId: scope?.sessionId ?? (unattributed ? newSessionId() : trackingData.sessionId),
-    sessionSource: scope ? scope.sessionSource : unattributed ? 'generated' : instanceSessionSource(trackingData),
+    sessionId: session?.sessionId ?? (unattributed ? newSessionId() : trackingData.sessionId),
+    sessionSource: session ? session.sessionSource : unattributed ? 'generated' : instanceSessionSource(trackingData),
     eventType: MCPAnalyticsEventType.custom,
     eventName: eventData.event,
     timestamp: new Date(),
@@ -265,6 +266,11 @@ async function captureCustomEvent(lowLevelServer: MCPServerLike, eventData: Capt
 
   // Re-use the same per-server publish path so the event picks up session info,
   // identity, sdk metadata, etc. Awaited so callers know the event was processed.
+  if (scope?.pending && !scope.pending.settled) {
+    // Sent once the call settles; its duration is still the moment it was captured.
+    scope.pending.events.push({ ...event, duration: 0 })
+    return
+  }
   const attribution =
     scope?.attribution ??
     (unattributed ? withoutCaller(getSessionInfo(lowLevelServer, trackingData, event.sessionId)) : undefined)
