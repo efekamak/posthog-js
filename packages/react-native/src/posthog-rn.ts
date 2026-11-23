@@ -177,6 +177,9 @@ export interface PostHogOptions extends PostHogCoreOptions {
    * Allows you to provide the storage type.
    * 'file' will try to load the best available storage, the provided 'customStorage', 'customAsyncStorage' or in-memory storage.
    *
+   * Events captured offline stay in the queue. A flush that fails with a network error keeps them and retries later.
+   * With 'file', the queue is stored on the device and survives an app restart.
+   *
    * @default 'file'
    */
   persistence?: 'memory' | 'file'
@@ -199,6 +202,7 @@ export interface PostHogOptions extends PostHogCoreOptions {
   /**
    * Captures app lifecycle events such as Application Installed, Application Updated, Application Opened, Application Became Active and Application Backgrounded.
    * Application Installed and Application Updated events are not supported with persistence set to 'memory'.
+   * On by default from 4.39.0.
    *
    * @default true
    */
@@ -470,7 +474,7 @@ export class PostHog extends PostHogCore {
   }
 
   /**
-   * Creates a new PostHog instance for React Native. You can find all configuration options in the [React Native SDK docs](https://posthog.com/docs/libraries/react-native#configuration-options).
+   * Creates a new PostHog instance for React Native. See [`PostHogOptions`](#posthogoptions) for all configuration options.
    *
    * If you prefer not to use the PostHogProvider, you can initialize PostHog in its own file and import the instance from there.
    *
@@ -1023,10 +1027,12 @@ export class PostHog extends PostHogCore {
   }
 
   // Read apart from the replay keys so a failure building those still reports the queue depth.
+  // Below flushAt the queue is ordinary batching, so the depth is only reported once it backs up.
   private _pendingQueueSize(): number | undefined {
     try {
       const queue = this.getPersistedProperty<unknown[]>(PostHogPersistedProperty.Queue)
-      return Array.isArray(queue) ? queue.length : 0
+      const depth = Array.isArray(queue) ? queue.length : 0
+      return depth > 0 && depth >= this.flushAt ? depth : undefined
     } catch {
       return undefined
     }
@@ -3367,7 +3373,8 @@ export class PostHog extends PostHogCore {
       screenshotScale,
       screenshotCompressionQuality,
       screenshotColorMode,
-      screenshotModeBackgroundCapture = false,
+      iOSCaptureMethod: localIOSCaptureMethod,
+      screenshotModeBackgroundCapture: legacyBackgroundCapture = false,
       sampleRate: localSampleRate,
       iOSdebouncerDelayMs = defaultThrottleDelayMs,
       androidDebouncerDelayMs = defaultThrottleDelayMs,
@@ -3382,6 +3389,23 @@ export class PostHog extends PostHogCore {
         )
       }
     }
+
+    const iOSCaptureMethod = localIOSCaptureMethod ?? 'standard'
+    if (Platform.OS === 'ios' && this._pluginVersionAtLeast(3, 0)) {
+      if (legacyBackgroundCapture && localIOSCaptureMethod === undefined) {
+        this._logger.warn(
+          `sessionReplayConfig.screenshotModeBackgroundCapture is ignored by @posthog/react-native-plugin 3.0 and later, ` +
+            `which capture with 'standard'. Remove it, or set sessionReplayConfig.iOSCaptureMethod: 'gpu'.`
+        )
+      }
+    } else if (iOSCaptureMethod === 'gpu' && Platform.OS === 'ios') {
+      this._logger.warn(
+        `sessionReplayConfig.iOSCaptureMethod: 'gpu' requires @posthog/react-native-plugin 3.0.0 or later. ` +
+          `The installed plugin (version ${OptionalReactNativePluginVersion ?? 'unknown'}) captures with 'standard'.`
+      )
+    }
+    // Plugins before 3.0 only read the boolean.
+    const screenshotModeBackgroundCapture = localIOSCaptureMethod === undefined && legacyBackgroundCapture
 
     let throttleDelayMs = options?.sessionReplayConfig?.throttleDelayMs ?? defaultThrottleDelayMs
 
@@ -3482,6 +3506,7 @@ export class PostHog extends PostHogCore {
       ...(Number.isFinite(screenshotScale) ? { screenshotScale } : {}),
       ...(Number.isFinite(screenshotCompressionQuality) ? { screenshotCompressionQuality } : {}),
       ...(screenshotColorMode !== undefined ? { screenshotColorMode } : {}),
+      iOSCaptureMethod,
       screenshotModeBackgroundCapture,
       sampleRate,
       iOSdebouncerDelayMs,
@@ -3631,7 +3656,7 @@ export class PostHog extends PostHogCore {
         }
         nativeSessionOwner = this
         if (!(await OptionalReactNativePlugin.isEnabled())) {
-          await OptionalReactNativePlugin.start(
+          await OptionalReactNativePlugin.start?.(
             String(sessionId),
             sdkOptions,
             sdkReplayConfig,

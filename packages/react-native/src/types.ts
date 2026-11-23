@@ -90,23 +90,21 @@ export type PostHogAutocaptureOptions = {
    *
    * Only used for expo-router, @react-navigation/native and react-native-navigation
    *
-   * For react-native-navigation, you need to call initReactNativeNavigation before using this option
-   *  See example: https://posthog.com/docs/libraries/react-native#with-react-native-navigation-and-autocapture
+   * For react-native-navigation, call `initReactNativeNavigation` before using this option.
    *
-   * For @react-navigation/native v6 and below, you need to wrap the PostHogProvider within the NavigationContainer
-   *  See example: https://posthog.com/docs/libraries/react-native#with-react-navigationnative-and-autocapture
+   * For @react-navigation/native v6 and below, wrap `PostHogProvider` within `NavigationContainer`.
    *
-   * For @react-navigation/native v7 and above, because of a library change, you'll need to capture the screens manually and disable this option
-   *  You can use the onStateChange callback from the NavigationContainer to capture the screens automatically using the screen capture method
-   *  You can use the 'usePostHog()' hook or your own posthog instance to capture the screens
-   *  Since captureScreens is disabled, you don't need to pass the navigationRef, the navigation mutation object is also ignored
-   *  See example: https://reactnavigation.org/docs/screen-tracking/ and https://posthog.com/docs/libraries/react-native#manually-capturing-screen-capture-events
+   * For @react-navigation/native v7 and above, because of a library change, you'll need to capture screens manually and disable this option.
+   *  You can use the `onStateChange` callback from `NavigationContainer` to capture screens with [`PostHog.screen`](#posthogscreen).
+   *  You can use the `usePostHog()` hook or your own `PostHog` instance to capture screens.
+   *  Since `captureScreens` is disabled, you don't need to pass `navigationRef`, and the navigation mutation object is ignored.
+   *  See: https://reactnavigation.org/docs/screen-tracking/
    *
-   * For expo-router, expo-router uses @react-navigation/native, but does not expose the NavigationContainer, you'll need to capture the screens manually and disable this option
-   *  expo-router always has access to a URL, you can use the URL to capture the screens automatically using the screen capture method
-   *  You can use the 'usePostHog()' hook or your own posthog instance to capture the screens
-   *  Since captureScreens is disabled, you don't need to pass the navigationRef, the navigation mutation object is also ignored
-   *  See example: https://docs.expo.dev/router/reference/screen-tracking/ and https://posthog.com/docs/libraries/react-native#manually-capturing-screen-capture-events
+   * For expo-router, expo-router uses @react-navigation/native, but does not expose `NavigationContainer`, so capture screens manually and disable this option.
+   *  expo-router always has access to a URL, so you can pass the URL to [`PostHog.screen`](#posthogscreen).
+   *  You can use the `usePostHog()` hook or your own `PostHog` instance to capture screens.
+   *  Since `captureScreens` is disabled, you don't need to pass `navigationRef`, and the navigation mutation object is ignored.
+   *  See: https://docs.expo.dev/router/reference/screen-tracking/
    *
    * @default true
    */
@@ -277,14 +275,25 @@ export type PostHogSessionReplayConfig = {
    */
   screenshotColorMode?: 'ARGB_8888' | 'RGB_565'
   /**
+   * How iOS captures each replay screenshot.
+   *
+   * - `'standard'`: draws the window on the main thread.
+   * - `'gpu'`: experimental. Copies the window's layers and renders the copy on the GPU, in short main-thread
+   *   steps. Content from another process, such as a web view's page, and Metal content are not captured.
+   *   Falls back to `'standard'` when a capture can't be made this way.
+   *
+   * iOS only. `'gpu'` requires `@posthog/react-native-plugin` 3.0.0 or later; older plugins capture with
+   * `'standard'`.
+   *
+   * @default 'standard'
+   */
+  iOSCaptureMethod?: 'standard' | 'gpu'
+  /**
    * Schedule screenshot image capture on a background queue.
    * iOS only
-   * Experimental support
    *
-   * Warning: Enabling this option will trigger Main Thread Checker warnings and may
-   * briefly freeze the app the first time a screenshot is captured. Consider disabling
-   * Main Thread Checker in your scheme's run diagnostics when enabling this.
-   *
+   * @deprecated ignored by `@posthog/react-native-plugin` 3.0 and later, because posthog-ios 4.0 removed background
+   * capture. Remove it, or use `iOSCaptureMethod: 'gpu'`. Ignored when `iOSCaptureMethod` is set.
    * @default false
    */
   screenshotModeBackgroundCapture?: boolean
